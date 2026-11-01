@@ -15,8 +15,16 @@ struct IncomingMessage: Codable, Equatable {
     var senderName: String?
     var senderPhone: String?
     var conversationID: String?
+    // Only explicit IDs are safe for automatic mutations. Protobuf IDs are heuristic.
+    var trustedConversationID: String?
 
     var displayName: String { senderName?.nilIfEmpty ?? title.nilIfEmpty ?? "Unknown" }
+
+    /// A successfully auto-copied code needs no normal notification or attention alert.
+    func handleAutomaticOTP(enabled: Bool, copy: (String) -> Bool) -> Bool {
+        guard enabled, let code = OTPExtractor.extract(from: body) else { return false }
+        return copy(code)
+    }
 
     static func parse(_ raw: Any) -> IncomingMessage? {
         var title = ""
@@ -38,6 +46,7 @@ struct IncomingMessage: Codable, Equatable {
 
         if let tag = options["tag"] as? String, tag.hasPrefix("cid:") {
             msg.conversationID = String(tag.dropFirst(4))
+            msg.trustedConversationID = msg.conversationID?.nilIfEmpty
         }
 
         if let data = options["data"] as? [String: Any] {
@@ -54,6 +63,7 @@ struct IncomingMessage: Codable, Equatable {
             }
             if msg.conversationID == nil {
                 msg.conversationID = (data["conversationId"] as? String) ?? (data["cid"] as? String)
+                msg.trustedConversationID = msg.conversationID?.nilIfEmpty
             }
         } else if let b64 = options["data"] as? String, let bytes = Data(base64Encoded: b64) {
             let strings = Protobuf.strings(in: bytes)

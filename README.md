@@ -10,7 +10,7 @@ prompt. No Texty code or artwork is included; [docs/FINDINGS.md](docs/FINDINGS.m
 ```bash
 scripts/build-app.sh            # -> build/SideText.app (universal, ad-hoc signed, sandboxed)
 scripts/build-app.sh --install  # also copies it to /Applications
-scripts/test.sh                 # OTP + notification-payload parser tests
+scripts/test.sh                 # OTP, notification payload, and mark-read tests (requires Node.js)
 ```
 
 Requires Xcode command line tools. No Xcode project or SwiftPM is used, because SwiftPM's own
@@ -25,7 +25,7 @@ to sign with a real certificate.
 | Native notifications for new messages | Free | ✓ |
 | Reply from notifications | Pro | ✓ |
 | Copy one-time codes from notifications | Pro | ✓ |
-| Automatically copy one-time codes (with toast) | Pro | ✓ (off by default) |
+| Automatically copy one-time codes (toast only, mark conversation read) | Pro | ✓ (off by default) |
 | Dock unread badge | Pro | ✓ |
 | Dock bouncing (once / until opened) | Pro | ✓ |
 | Notification sound choice | Pro | ✓ (system sounds + `~/Library/Sounds`) |
@@ -53,6 +53,10 @@ to sign with a real certificate.
 - `IncomingMessage.parse` reads those options. Texty accepts two payload shapes, and so does
   this: `options.data.participants[…]` with `options.tag = "cid:<id>"`, or `options.data` as a
   base64 protobuf.
+- With automatic code copying enabled, successfully copied OTPs show only the temporary green
+  clipboard toast, without a native notification, sound, or Dock bounce. The app selects the
+  verified OTP thread, checks that Google clears its unread flag, then restores the prior route
+  when doing so would not consume a new unread message in another conversation.
 - Inline reply queues the text, opens the conversation, fills the composer, and gets the Send
   button's coordinates. It then clicks with a real `NSEvent`, which is how Texty does it. If the
   composer doesn't clear, it falls back to a DOM click. If the send still isn't confirmed, the
@@ -62,7 +66,13 @@ to sign with a real certificate.
 
 - Google changes the Messages web DOM from time to time. Selectors live in
   `WebScripts.swift` (`data-e2e-*` attributes, `mws-conversation-list-item`).
-- The unread badge counts rows marked `.unread` in the conversation list, plus messages that
-  arrive while the app is in the background.
+- Automatic mark-read requires an unchanged complete message snippet and either a trusted
+  conversation ID or a unique exact sender match. It leaves drafts, ambiguous matches, and
+  open menus alone. Guessed protobuf IDs are never used to select a conversation.
+- Conversation identity uses `data-e2e-conversation` or a validated same-origin conversation
+  URL. Read state uses Google's `data-e2e-is-unread` attribute, with legacy unread markers as
+  a fallback. Unknown read state is never reported as success.
+- The unread badge counts unread conversation rows, plus messages that arrive while the app
+  is in the background and were not automatically handled as codes.
 - The protobuf payload's exact field numbers aren't known. The parser pulls out strings
   heuristically, and the dictionary form is the main path.

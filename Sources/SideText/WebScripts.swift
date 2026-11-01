@@ -149,7 +149,8 @@ enum WebScripts {
             let n = 0;
             items.forEach(function(item) {
                 const a = item.querySelector('a');
-                if (item.querySelector('.unread') || (a && /\bunread\b/.test(a.className))) { n += 1; }
+                const state = a && a.getAttribute('data-e2e-is-unread');
+                if (state === 'true' || (state == null && (item.querySelector('.unread') || (a && /\bunread\b/.test(a.className))))) { n += 1; }
             });
             if (n !== lastUnread) {
                 lastUnread = n;
@@ -418,6 +419,142 @@ enum WebScripts {
                 return null;
             }
             return find(true) || find(false);
+        })();
+        """#
+    }
+
+    /// Google Messages has no mark-read menu action. Select the verified OTP thread,
+    /// verify the actual read attribute, then restore the previous route when safe.
+    static func markConversationRead(cid: String, body: String, senderName: String? = nil, phone: String? = nil) -> String {
+        #"""
+        return await (async function() {
+            const cid = \#(jsString(cid)), body = \#(jsString(body));
+            const senderName = \#(jsString(senderName ?? "")), phone = \#(jsString(phone ?? ""));
+            const wait = () => new Promise(resolve => setTimeout(resolve, 100));
+            const normalize = text => (text || '').normalize('NFC').replace(/\s+/g, ' ').trim();
+            const startURL = location.href;
+            const previousFocus = document.activeElement;
+            let matchFailure = 'conversation-missing';
+            function target() {
+                const items = Array.from(document.querySelectorAll('mws-conversation-list-item'));
+                let matches = cid ? items.filter(item => Array.from(item.querySelectorAll('a')).some(a => {
+                    // Current Google Messages exposes row identity directly, even without href.
+                    if (a.getAttribute('data-e2e-conversation') === cid) { return true; }
+                    const href = a.getAttribute('href');
+                    if (!href) { return false; }
+                    try {
+                        const url = new URL(href, location.href);
+                        const route = url.pathname.match(/^\/web\/(?:u\/\d+\/)?conversations\/([^/]+)\/?$/);
+                        return url.origin === new URL(startURL).origin && route && decodeURIComponent(route[1]) === cid;
+                    } catch (_) { return false; }
+                })) : [];
+                // Notification IDs can use a different encoding from web routes. Only
+                // fall back to one exact sender AND complete latest-message match.
+                if (!matches.length && (normalize(senderName) || normalize(phone))) {
+                    matches = items.filter(item => {
+                        const name = item.querySelector('[data-e2e-conversation-name]');
+                        const snippet = item.querySelector('[data-e2e-conversation-snippet]');
+                        const actualName = name && normalize(name.textContent);
+                        const nameMatches = actualName && [normalize(senderName), normalize(phone)].filter(Boolean).includes(actualName);
+                        return nameMatches && snippet && item.querySelectorAll('[data-e2e-conversation-snippet]').length === 1 &&
+                            (normalize(snippet.textContent) === normalize(body) || normalize(snippet.innerText) === normalize(body));
+                    });
+                }
+                if (matches.length !== 1) {
+                    matchFailure = matches.length ? 'conversation-ambiguous' : 'conversation-missing (rows ' + items.length + ', links ' + items.filter(item => item.querySelector('a[href]')).length + ')';
+                    return null;
+                }
+                const row = matches[0];
+                const snippets = row.querySelectorAll('[data-e2e-conversation-snippet]');
+                if (snippets.length !== 1) { matchFailure = 'snippet-missing-or-ambiguous'; return null; }
+                const snippet = snippets[0];
+                if (normalize(snippet.textContent) === normalize(body) || normalize(snippet.innerText) === normalize(body)) { return row; }
+                matchFailure = 'snippet-mismatch (notification length ' + body.length + ', preview length ' + (snippet.textContent || '').length + ')';
+                return null;
+            }
+            function unread(row) {
+                const a = row.querySelector('a');
+                const state = a && a.getAttribute('data-e2e-is-unread');
+                if (state === 'true') { return true; }
+                if (state === 'false') { return false; }
+                return null;
+            }
+            const anchorURL = anchor => {
+                const href = anchor && anchor.getAttribute('href');
+                try { return href ? new URL(href, startURL).href : null; }
+                catch (_) { return null; }
+            };
+            const snippetText = item => item && normalize(item.querySelector('[data-e2e-conversation-snippet]')?.textContent);
+            if ((!cid && !normalize(senderName) && !normalize(phone)) || !normalize(body)) { return 'unavailable'; }
+            let interrupted = false;
+            const userInput = event => { if (event.isTrusted) { interrupted = true; } };
+            document.addEventListener('pointerdown', userInput, true);
+            document.addEventListener('keydown', userInput, true);
+            let selected = false;
+            let originalRow = null;
+            let originalSnippet = null;
+            let originalWasRead = false;
+            const originallyList = /\/conversations\/?$/.test(new URL(startURL).pathname);
+            const originalHistoryLength = history.length;
+            let selectedURL = null;
+            try {
+                let row = null;
+                for (let i = 0; i < 40; i++) {
+                    await wait();
+                    if (interrupted || location.href !== startURL) { return 'interrupted'; }
+                    row = target();
+                    if (row) { break; }
+                }
+                if (!row) { return matchFailure; }
+                if (unread(row) === false) { return 'already-read'; }
+                if (unread(row) !== true) { return 'read-state-unknown'; }
+                const composer = document.querySelector('textarea[data-e2e-message-input-box]');
+                if (composer && composer.value) { return 'draft-present'; }
+                if (Array.from(document.querySelectorAll('[role="menu"]')).some(menu => menu.getClientRects().length > 0)) { return 'menu-open'; }
+                originalRow = Array.from(document.querySelectorAll('mws-conversation-list-item')).find(item =>
+                    Array.from(item.querySelectorAll('a')).some(a => anchorURL(a) === startURL)) || null;
+                originalSnippet = snippetText(originalRow);
+                originalWasRead = originalRow && unread(originalRow) === false;
+                const anchor = row.querySelector('a');
+                if (!anchor || target() !== row) { return 'unavailable'; }
+                selectedURL = anchorURL(anchor);
+                if (selectedURL && new URL(selectedURL).origin !== new URL(startURL).origin) { return 'unavailable'; }
+                selected = true;
+                anchor.click();
+                for (let i = 0; i < 40; i++) {
+                    await wait();
+                    if (interrupted) { return 'interrupted'; }
+                    if (selectedURL && location.href !== selectedURL && location.href !== startURL) {
+                        const routeID = value => new URL(value).pathname.match(/\/conversations\/([^/]+)\/?$/)?.[1];
+                        if (new URL(location.href).origin !== new URL(startURL).origin || !routeID(selectedURL) || routeID(location.href) !== routeID(selectedURL)) { return 'interrupted'; }
+                    }
+                    const current = target();
+                    if (!current) { return matchFailure; }
+                    if (unread(current) === false) { return 'read'; }
+                }
+                return 'timeout';
+            } finally {
+                if (selected && !interrupted && location.href !== startURL) {
+                    const previous = Array.from(document.querySelectorAll('mws-conversation-list-item')).find(item =>
+                        Array.from(item.querySelectorAll('a')).some(a => anchorURL(a) === startURL)) || null;
+                    const previousSafe = originallyList || (originalWasRead && previous && unread(previous) === false && snippetText(previous) === originalSnippet);
+                    if (previousSafe && history.length > originalHistoryLength) {
+                        history.back();
+                        for (let i = 0; i < 40 && location.href !== startURL && !interrupted; i++) { await wait(); }
+                    } else {
+                        // Never reopen a different conversation that gained unread messages.
+                        const listURL = new URL(startURL);
+                        listURL.pathname = listURL.pathname.replace(/(\/conversations)\/[^/]+\/?$/, '$1');
+                        const listAnchor = Array.from(document.querySelectorAll('a[href]')).find(a => anchorURL(a) === listURL.href);
+                        if (listAnchor && listURL.href !== startURL) { listAnchor.click(); }
+                    }
+                }
+                document.removeEventListener('pointerdown', userInput, true);
+                document.removeEventListener('keydown', userInput, true);
+                if (!interrupted && location.href === startURL && previousFocus?.isConnected) {
+                    previousFocus.focus({ preventScroll: true });
+                }
+            }
         })();
         """#
     }

@@ -1,6 +1,10 @@
 import Foundation
 
-// Compiled together with OTPExtractor.swift and IncomingMessage.swift by scripts/test.sh.
+// Compiled with the parser, OTP handling, and WebScripts by scripts/test.sh.
+if CommandLine.arguments.contains("--mark-read-script") {
+    print(WebScripts.markConversationRead(cid: "12345", body: "Your verification code is 482913.", senderName: "Acme"))
+    exit(0)
+}
 var failures = 0
 func expect<T: Equatable>(_ actual: T, _ expected: T, _ label: String) {
     if actual == expected {
@@ -48,6 +52,26 @@ expect(m3?.senderPhone, "+15550100", "protobuf phone")
 _ = proto.count
 
 expect(IncomingMessage.parse(["title": "", "options": [:]]) == nil, true, "empty payload rejected")
+
+// Automatic handling gates every alert path on a successful copy.
+let otp = IncomingMessage(title: "Acme", body: "Your verification code is 482913.")
+var copied: [String] = []
+expect(otp.handleAutomaticOTP(enabled: true) { copied.append($0); return true }, true, "auto-copied OTP skips normal alerts")
+expect(copied, ["482913"], "automatic handling copies once")
+expect(otp.handleAutomaticOTP(enabled: false) { _ in failures += 1; return true }, false, "disabled auto-copy keeps normal alerts")
+expect(otp.handleAutomaticOTP(enabled: true) { _ in false }, false, "failed clipboard write keeps normal alerts")
+expect(m1!.handleAutomaticOTP(enabled: true) { _ in failures += 1; return true }, false, "ordinary messages keep normal alerts")
+
+// Never mutate a conversation based on a guessed protobuf ID.
+expect(m1?.trustedConversationID, "12345", "tag ID is trusted for mark-read")
+expect(m3?.trustedConversationID, nil, "protobuf ID is not trusted for mark-read")
+let explicit = IncomingMessage.parse(["title": "Acme", "options": ["body": otp.body, "data": ["conversationId": "12345"]]])
+expect(explicit?.trustedConversationID, "12345", "dictionary ID is trusted for mark-read")
+expect(m2?.trustedConversationID, nil, "missing ID cannot be used for mark-read")
+let roundTrip = try! JSONDecoder().decode(IncomingMessage.self, from: JSONEncoder().encode(m1!))
+expect(roundTrip.trustedConversationID, "12345", "trusted ID survives notification encoding")
+let oldNotification = Data(#"{"title":"Acme","body":"hi","conversationID":"12345"}"#.utf8)
+expect((try? JSONDecoder().decode(IncomingMessage.self, from: oldNotification))?.trustedConversationID, nil, "old notifications decode without a trusted ID")
 
 print(failures == 0 ? "All tests passed" : "\(failures) test(s) failed")
 exit(failures == 0 ? 0 : 1)

@@ -22,6 +22,8 @@ final class MessagesViewController: NSViewController {
     private var pendingReplies: [PendingReply] = []
     private var activeReply: PendingReply?
     private var replyTimeout: DispatchWorkItem?
+    private var pendingReadMessages: [IncomingMessage] = []
+    private var markingRead = false
 
     override func loadView() {
         let config = WKWebViewConfiguration()
@@ -140,6 +142,36 @@ final class MessagesViewController: NSViewController {
         webView.evaluateJavaScript(js) { result, _ in completion?(result as? String) }
     }
 
+    // MARK: Automatically handled codes
+
+    private func queueMarkRead(_ message: IncomingMessage) {
+        if !pendingReadMessages.contains(message) { pendingReadMessages.append(message) }
+        processNextRead()
+    }
+
+    private func processNextRead() {
+        guard !markingRead, activeReply == nil, pendingReplies.isEmpty,
+              conversationsReady, !pendingReadMessages.isEmpty else { return }
+        let message = pendingReadMessages.removeFirst()
+        let cid = message.trustedConversationID ?? ""
+        markingRead = true
+        webView.callAsyncJavaScript(WebScripts.markConversationRead(cid: cid, body: message.body,
+                                                                   senderName: message.senderName ?? message.title,
+                                                                   phone: message.senderPhone),
+                                    arguments: [:], in: nil, in: .page) { [weak self] result in
+            guard let self else { return }
+            self.markingRead = false
+            switch result {
+            case .success(let value):
+                Log.info("Auto-copied code read action: \(value)", category: "OTP")
+            case .failure:
+                Log.error("Could not mark code conversation read", category: "OTP")
+            }
+            self.processNextReply()
+            self.processNextRead()
+        }
+    }
+
     // MARK: Replies
 
     func queueReply(_ text: String, to message: IncomingMessage) {
@@ -149,7 +181,7 @@ final class MessagesViewController: NSViewController {
     }
 
     private func processNextReply() {
-        guard activeReply == nil, conversationsReady, !pendingReplies.isEmpty else { return }
+        guard activeReply == nil, !markingRead, conversationsReady, !pendingReplies.isEmpty else { return }
         let reply = pendingReplies.removeFirst()
         activeReply = reply
         let timeout = DispatchWorkItem { [weak self] in self?.finishReply(success: false, reason: "timed out") }
@@ -234,6 +266,7 @@ final class MessagesViewController: NSViewController {
             alert.runModal()
         }
         processNextReply()
+        processNextRead()
     }
 
     // MARK: State
@@ -321,16 +354,16 @@ extension MessagesViewController: WKScriptMessageHandler {
                 return
             }
             Log.info("New message received", category: "Notifications")
+            // Handle codes before every alert path, including foreground sound and Dock bounce.
+            if NotificationManager.shared.autoCopyOTP(in: incoming) {
+                queueMarkRead(incoming)
+                return
+            }
             DockManager.shared.messageArrived()
             if !NSApp.isActive || !(view.window?.isVisible ?? false) {
                 NotificationManager.shared.post(message: incoming)
             } else {
                 if Prefs.playSound { SoundCatalog.play(Prefs.soundName) }
-                if Prefs.autoCopyOTP, let code = OTPExtractor.extract(from: incoming.body) {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(code, forType: .string)
-                    Toast.show("\u{201C}\(code)\u{201D} copied to clipboard", subtitle: "Copied from a new message")
-                }
             }
         case WebScripts.ajaxHandler:
             guard let body = message.body as? [String: Any] else { return }
@@ -370,6 +403,7 @@ extension MessagesViewController: WKScriptMessageHandler {
             applyScrollbarStyle(force: true)
         }
         processNextReply()
+        processNextRead()
     }
 }
 

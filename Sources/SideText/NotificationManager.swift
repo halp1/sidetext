@@ -70,11 +70,15 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: Posting
 
+    /// Returns true only after copying, so clipboard failures still get normal alerts.
+    func autoCopyOTP(in message: IncomingMessage) -> Bool {
+        message.handleAutomaticOTP(enabled: Prefs.autoCopyOTP) { code in
+            copyToClipboard(code, auto: true)
+        }
+    }
+
     func post(message: IncomingMessage) {
         let otp = OTPExtractor.extract(from: message.body)
-        if let otp, Prefs.autoCopyOTP {
-            copyToClipboard(otp, auto: true)
-        }
         guard Prefs.showNotifications else {
             if Prefs.playSound { SoundCatalog.play(Prefs.soundName) }
             return
@@ -122,13 +126,16 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
     func removeAllDelivered() { center.removeAllDeliveredNotifications() }
 
-    private func copyToClipboard(_ code: String, auto: Bool) {
-        DispatchQueue.main.async {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(code, forType: .string)
-            Toast.show("\u{201C}\(code)\u{201D} copied to clipboard",
-                       subtitle: auto ? "Copied from a new message" : "Copied to clipboard")
+    @discardableResult
+    private func copyToClipboard(_ code: String, auto: Bool) -> Bool {
+        NSPasteboard.general.clearContents()
+        guard NSPasteboard.general.setString(code, forType: .string) else {
+            Log.error("Could not copy one-time code", category: "Notifications")
+            return false
         }
+        Toast.show("\u{201C}\(code)\u{201D} copied to clipboard",
+                   subtitle: auto ? "Copied from a new message" : "Copied to clipboard")
+        return true
     }
 
     // MARK: UNUserNotificationCenterDelegate
@@ -152,7 +159,9 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
                 DispatchQueue.main.async { self.delegate?.notificationManager(self, didRequestReply: text, to: message) }
             }
         case Action.copyCode:
-            if let code = info[otpKey] as? String { copyToClipboard(code, auto: false) }
+            if let code = info[otpKey] as? String {
+                DispatchQueue.main.async { self.copyToClipboard(code, auto: false) }
+            }
         case UNNotificationDefaultActionIdentifier:
             if let message {
                 DispatchQueue.main.async { self.delegate?.notificationManager(self, didOpen: message) }
