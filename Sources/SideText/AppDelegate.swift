@@ -139,6 +139,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, Noti
         messagesVC.open(message: message)
     }
 
+    func notificationManager(_ m: NotificationManager, didRequestMarkRead message: IncomingMessage) {
+        messagesVC.queueMarkRead(message)
+    }
+
     // MARK: Actions
 
     @objc func newMessage() { showMainWindow(); messagesVC.startNewMessage() }

@@ -4,6 +4,7 @@ import UserNotifications
 protocol NotificationManagerDelegate: AnyObject {
     func notificationManager(_ m: NotificationManager, didRequestReply text: String, to message: IncomingMessage)
     func notificationManager(_ m: NotificationManager, didOpen message: IncomingMessage)
+    func notificationManager(_ m: NotificationManager, didRequestMarkRead message: IncomingMessage)
 }
 
 /// Native notifications for incoming messages, with inline reply and one-click code copy.
@@ -27,6 +28,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     enum Action {
         static let reply = "REPLY_ACTION"
         static let copyCode = "COPY_OTP_ACTION"
+        static let markRead = "MARK_READ_ACTION"
     }
 
     func configure() {
@@ -35,11 +37,12 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
                                                   options: [], textInputButtonTitle: "Send",
                                                   textInputPlaceholder: "Message")
         let copy = UNNotificationAction(identifier: Action.copyCode, title: "Copy Code", options: [])
+        let markRead = UNNotificationAction(identifier: Action.markRead, title: "Mark as Read", options: [])
         center.setNotificationCategories([
-            UNNotificationCategory(identifier: Category.message, actions: [], intentIdentifiers: []),
-            UNNotificationCategory(identifier: Category.messageWithReply, actions: [reply], intentIdentifiers: []),
-            UNNotificationCategory(identifier: Category.messageWithOTP, actions: [copy], intentIdentifiers: []),
-            UNNotificationCategory(identifier: Category.messageWithReplyAndOTP, actions: [copy, reply], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Category.message, actions: [markRead], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Category.messageWithReply, actions: [reply, markRead], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Category.messageWithOTP, actions: [copy, markRead], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Category.messageWithReplyAndOTP, actions: [copy, reply, markRead], intentIdentifiers: []),
             UNNotificationCategory(identifier: Category.phoneStatus, actions: [], intentIdentifiers: []),
         ])
         center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
@@ -126,6 +129,21 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
     func removeAllDelivered() { center.removeAllDeliveredNotifications() }
 
+    /// Mark-read only succeeds against the thread's latest preview, so use the newest
+    /// notification in the same thread and clear the rest of that thread.
+    private func markThreadRead(from notification: UNNotification, fallback: IncomingMessage) {
+        let thread = notification.request.content.threadIdentifier
+        center.getDeliveredNotifications { delivered in
+            let siblings = delivered.filter { $0.request.content.threadIdentifier == thread }
+            let newest = (siblings + [notification]).max { $0.date < $1.date }
+            let message = (newest?.request.content.userInfo[self.messageKey] as? Data)
+                .flatMap { try? JSONDecoder().decode(IncomingMessage.self, from: $0) } ?? fallback
+            self.center.removeDeliveredNotifications(withIdentifiers: siblings.map(\.request.identifier))
+            Log.info("Notification mark-read requested", category: "Notifications")
+            DispatchQueue.main.async { self.delegate?.notificationManager(self, didRequestMarkRead: message) }
+        }
+    }
+
     @discardableResult
     private func copyToClipboard(_ code: String, auto: Bool) -> Bool {
         NSPasteboard.general.clearContents()
@@ -161,6 +179,10 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         case Action.copyCode:
             if let code = info[otpKey] as? String {
                 DispatchQueue.main.async { self.copyToClipboard(code, auto: false) }
+            }
+        case Action.markRead:
+            if let message {
+                markThreadRead(from: response.notification, fallback: message)
             }
         case UNNotificationDefaultActionIdentifier:
             if let message {

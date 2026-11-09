@@ -142,9 +142,9 @@ final class MessagesViewController: NSViewController {
         webView.evaluateJavaScript(js) { result, _ in completion?(result as? String) }
     }
 
-    // MARK: Automatically handled codes
+    // MARK: Mark read (auto-copied codes and the notification action)
 
-    private func queueMarkRead(_ message: IncomingMessage) {
+    func queueMarkRead(_ message: IncomingMessage) {
         if !pendingReadMessages.contains(message) { pendingReadMessages.append(message) }
         processNextRead()
     }
@@ -163,9 +163,9 @@ final class MessagesViewController: NSViewController {
             self.markingRead = false
             switch result {
             case .success(let value):
-                Log.info("Auto-copied code read action: \(value)", category: "OTP")
+                Log.info("Mark-read result: \(value)", category: "Read")
             case .failure:
-                Log.error("Could not mark code conversation read", category: "OTP")
+                Log.error("Could not mark conversation read", category: "Read")
             }
             self.processNextReply()
             self.processNextRead()

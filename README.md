@@ -24,6 +24,7 @@ to sign with a real certificate.
 | Google Messages in a native window, runs in background | Free | ✓ |
 | Native notifications for new messages | Free | ✓ |
 | Reply from notifications | Pro | ✓ |
+| Mark as read from notifications | No | ✓ |
 | Copy one-time codes from notifications | Pro | ✓ |
 | Automatically copy one-time codes (toast only, mark conversation read) | Pro | ✓ (off by default) |
 | Dock unread badge | Pro | ✓ |
