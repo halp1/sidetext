@@ -22,10 +22,16 @@ enum OTPExtractor {
 
     static func extract(from text: String) -> String? {
         let lower = text.lowercased()
-        let keywordRanges: [Range<String.Index>] = keywords.compactMap { lower.range(of: $0) }
-        guard !keywordRanges.isEmpty else { return nil }
-
         let ns = text as NSString
+        // Offsets are UTF-16, the same units NSRegularExpression reports for the codes below.
+        // Counting keywords in Characters instead puts every emoji or accent ahead of them off
+        // by a unit or more, which can make a nearby order number win over the real code.
+        let keywordOffsets: [Int] = keywords.compactMap { keyword in
+            let range = ns.range(of: keyword, options: .caseInsensitive)
+            return range.location == NSNotFound ? nil : range.location
+        }
+        guard !keywordOffsets.isEmpty else { return nil }
+
         let matches = codeRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
         let candidates: [(code: String, location: Int)] = matches.compactMap { m in
             var code = ns.substring(with: m.range(at: 1))
@@ -42,7 +48,6 @@ enum OTPExtractor {
         }
         guard !candidates.isEmpty else { return nil }
 
-        let keywordOffsets = keywordRanges.map { lower.distance(from: lower.startIndex, to: $0.lowerBound) }
         return candidates.min { a, b in
             distance(a.location, keywordOffsets) < distance(b.location, keywordOffsets)
         }?.code

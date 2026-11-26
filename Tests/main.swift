@@ -24,6 +24,9 @@ expect(OTPExtractor.extract(from: "Ваш код: 5521"), "5521", "ru code")
 expect(OTPExtractor.extract(from: "验证码 884213，5分钟内有效"), "884213", "zh code")
 expect(OTPExtractor.extract(from: "Running 10 min late, see you at 1830"), nil, "no keyword")
 expect(OTPExtractor.extract(from: "Call me at 555 1234 tonight"), nil, "phone number, no keyword")
+// Emoji before the text must not shift the keyword away from the code next to it.
+expect(OTPExtractor.extract(from: "🎉🎉 Order 1234: your code is 567890"), "567890", "emoji before keyword")
+expect(OTPExtractor.extract(from: "👋🏽👋🏽 Ref 2207: your code is 913377"), "913377", "skin tone emoji before keyword")
 
 // Notification payload: Google Messages dictionary form (as decompiled from Texty).
 let dictPayload: [String: Any] = [
