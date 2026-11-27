@@ -5,6 +5,10 @@ if CommandLine.arguments.contains("--mark-read-script") {
     print(WebScripts.markConversationRead(cid: "12345", body: "Your verification code is 482913.", senderName: "Acme"))
     exit(0)
 }
+if CommandLine.arguments.contains("--phone-status-script") {
+    print(WebScripts.phoneStatus)
+    exit(0)
+}
 var failures = 0
 func expect<T: Equatable>(_ actual: T, _ expected: T, _ label: String) {
     if actual == expected {

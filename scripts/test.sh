@@ -10,3 +10,4 @@ xcrun swiftc -module-cache-path "$ROOT/build/ModuleCache" -o "$ROOT/build/parser
   "$ROOT/Tests/main.swift"
 "$ROOT/build/parser-tests"
 node "$ROOT/Tests/mark-read.test.js" "$ROOT/build/parser-tests"
+node "$ROOT/Tests/phone-status.test.js" "$ROOT/build/parser-tests"
