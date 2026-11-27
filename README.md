@@ -10,7 +10,7 @@ prompt. No Texty code or artwork is included; [docs/FINDINGS.md](docs/FINDINGS.m
 ```bash
 scripts/build-app.sh            # -> build/SideText.app (universal, ad-hoc signed, sandboxed)
 scripts/build-app.sh --install  # also copies it to /Applications
-scripts/test.sh                 # OTP, notification payload, and mark-read tests (requires Node.js)
+scripts/test.sh                 # OTP, payload, mark-read and phone status tests (requires Node.js)
 ```
 
 Requires Xcode command line tools. No Xcode project or SwiftPM is used, because SwiftPM's own
@@ -42,7 +42,7 @@ to sign with a real certificate.
 | Offline / cannot-connect screens, auto-reload on network/wake, web-process crash recovery | Free | ✓ |
 | Downloads named from the attachment, saved to Downloads/custom folder | Free | ✓ |
 | Console Output window (page console + app log) | Free | ✓ (View menu) |
-| Phone offline / back online notifications | Free | `NotificationManager.postPhoneStatus` exists but nothing calls it yet |
+| Phone offline / back online notifications | Free | ✓ (after 25 s offline, settings toggle) |
 
 ## How it works
 
@@ -58,6 +58,11 @@ to sign with a real certificate.
   clipboard toast, without a native notification, sound, or Dock bounce. The app selects the
   verified OTP thread, checks that Google clears its unread flag, then restores the prior route
   when doing so would not consume a new unread message in another conversation.
+- Phone status watches for Google's "Trying to reach your phone" banner
+  (`data-e2e-phone-no-connection-banner`) and the full-page `mw-unable-to-connect-container`.
+  Offline is posted once the banner has stayed up for 25 s. Back online is posted only after
+  an offline notice, once the phone has been reachable for 10 s. While the Mac itself is
+  offline, nothing is concluded about the phone.
 - Inline reply queues the text, opens the conversation, fills the composer, and gets the Send
   button's coordinates. It then clicks with a real `NSEvent`, which is how Texty does it. If the
   composer doesn't clear, it falls back to a DOM click. If the send still isn't confirmed, the

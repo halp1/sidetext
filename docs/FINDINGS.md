@@ -41,4 +41,29 @@ bouncing, custom sounds, advanced settings, one-click 2FA code copy.
 
 - Exact protobuf field numbers for `texty.NotificationData` (the SwiftProtobuf name map gives
   field names but the decoder layout wasn't recovered).
-- How Texty decides a phone is "offline" for its phone-status notifications.
+- How Texty decides a phone is "offline" for its phone-status notifications (Texty was not
+  available when this was implemented, so SideText's signal comes from Google's page instead).
+
+## Google Messages for Web: phone reachability (read 2026-11-27)
+
+Read from the public `messagesweb` JavaScript bundle on gstatic.com (module `EEaDoe` for the
+banners, `xMgyvf` for the full-page screen), without signing in.
+
+- `mw-banner` renders at most one banner, chosen from an enum whose names include
+  `PHONE_NO_CONNECTION` (5), `PHONE_CONNECTION` (6), `PHONE_CONNECTING` (7) and
+  `BROWSER_OFFLINE` (10). `BROWSER_OFFLINE` wins over every phone state.
+- `PHONE_NO_CONNECTION` is an `mw-error-banner` with the static attribute
+  `data-e2e-phone-no-connection-banner`, title "Trying to reach your phone" and content "Check
+  that your phone is on and connected to Wi-Fi or your mobile network." The other states are
+  `mw-information-banner` elements ("Connecting", "Connected", "No internet connection") with
+  no `data-e2e` marker. The container's `aria-live` is assertive for states 5 and 10.
+- `/web/unableToConnect` renders `mw-unable-to-connect-container`, also titled "Trying to
+  reach your phone", with fix-it steps.
+- Open-source projects that read the live page agree on the title text and the
+  `information-banner` / `mw-unable-to-connect-container` names (Keepr-Compliance/Mad,
+  Startempire-Wire/focusa). mautrix-gmessages decides on its own from missed pings and waits
+  about 8 minutes before telling the user, because phones doze.
+
+Confidence: high that the attribute and element names are what the current bundle renders.
+Medium on timing: how long Google waits before showing the banner, and how often it flaps,
+needs a real phone to observe.
