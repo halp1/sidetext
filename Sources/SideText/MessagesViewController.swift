@@ -36,13 +36,15 @@ final class MessagesViewController: NSViewController {
         let controller = WKUserContentController()
         let handler = WeakScriptHandler(self)
         for name in [WebScripts.notifyHandler, WebScripts.ajaxHandler, WebScripts.consoleHandler,
-                     WebScripts.loadedHandler, WebScripts.sendButtonHandler, WebScripts.unreadHandler] {
+                     WebScripts.loadedHandler, WebScripts.sendButtonHandler, WebScripts.unreadHandler,
+                     WebScripts.phoneStatusHandler] {
             controller.add(handler, name: name)
         }
         for source in [WebScripts.consoleRedirect, WebScripts.helper] {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
-        for source in [WebScripts.emojiCSS, WebScripts.spellcheck, WebScripts.conversationsLoaded, WebScripts.scrollbar] {
+        for source in [WebScripts.emojiCSS, WebScripts.spellcheck, WebScripts.conversationsLoaded, WebScripts.scrollbar,
+                       WebScripts.phoneStatus] {
             controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         }
         config.userContentController = controller
@@ -385,6 +387,10 @@ extension MessagesViewController: WKScriptMessageHandler {
                (body["rows"] as? Int ?? 0) > 0 {
                 DockManager.shared.setPageUnread(count)
             }
+        case WebScripts.phoneStatusHandler:
+            guard let body = message.body as? [String: Any], let online = body["online"] as? Bool else { return }
+            Log.info("Phone \(online ? "reachable again" : "unreachable")", category: "Phone")
+            NotificationManager.shared.postPhoneStatus(online: online)
         case WebScripts.consoleHandler:
             if let body = message.body as? [String: Any] {
                 Log.info("\(body["type"] as? String ?? "log"): \(body["message"].map { "\($0)" } ?? "")", category: "Page")

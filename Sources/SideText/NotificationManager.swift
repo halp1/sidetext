@@ -116,7 +116,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func postPhoneStatus(online: Bool) {
-        guard Prefs.showNotifications else { return }
+        guard Prefs.showNotifications, Prefs.phoneStatusNotifications else { return }
         let content = UNMutableNotificationContent()
         content.title = online ? "Phone back online" : "Phone offline"
         content.body = online ? "Messages can be sent and received again."

@@ -21,6 +21,7 @@ enum Prefs {
         static let customDownloadFolderPath = "customDownloadFolderPath"
         static let customDownloadBookmark = "customDownloadBookmark"
         static let autoCopyOTP = "automaticallyCopyOTPCodes"
+        static let phoneStatusNotifications = "showPhoneStatusNotifications"
         static let isFirstLaunch = "isFirstLaunch"
     }
 
@@ -49,6 +50,7 @@ enum Prefs {
             Key.zoomFactor: 1.0,
             Key.useCustomDownloadFolder: false,
             Key.autoCopyOTP: false,
+            Key.phoneStatusNotifications: true,
             Key.isFirstLaunch: true,
         ])
     }
@@ -70,6 +72,7 @@ enum Prefs {
         ScrollBarStyle(rawValue: d.integer(forKey: Key.scrollBarStyle)) ?? .google
     }
     static var autoCopyOTP: Bool { d.bool(forKey: Key.autoCopyOTP) }
+    static var phoneStatusNotifications: Bool { d.bool(forKey: Key.phoneStatusNotifications) }
 
     static var zoomFactor: Double {
         get {

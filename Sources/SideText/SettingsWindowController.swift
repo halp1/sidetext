@@ -125,6 +125,8 @@ final class SettingsWindowController: NSWindowController {
         zoomSlider.widthAnchor.constraint(equalToConstant: 220).isActive = true
         let soundRow = NSStackView(views: [check("Play sound", key: Prefs.Key.playSound), soundPopup])
         let bounceRow = NSStackView(views: [check("Bounce Dock icon", key: Prefs.Key.enableBounce), bounce])
+        let phoneStatus = check("Notify when the phone goes offline or comes back", key: Prefs.Key.phoneStatusNotifications)
+        phoneStatus.bind(.enabled, to: NSUserDefaultsController.shared, withKeyPath: "values.\(Prefs.Key.showNotifications)", options: nil)
 
         let rows: [[NSView]] = [
             [label("General", bold: true), loginCheckbox],
@@ -135,6 +137,7 @@ final class SettingsWindowController: NSWindowController {
             [NSView(), NSView()],
             [label("Notifications", bold: true), check("Show notifications for new messages", key: Prefs.Key.showNotifications)],
             [NSView(), soundRow],
+            [NSView(), phoneStatus],
             [NSView(), notifSettings],
             [NSView(), NSView()],
             [label("Replies", bold: true), check("Reply from notifications", key: Prefs.Key.enableInlineReplies)],

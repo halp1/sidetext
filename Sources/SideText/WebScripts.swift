@@ -11,6 +11,7 @@ enum WebScripts {
     static let loadedHandler = "conversationsLoaded"
     static let sendButtonHandler = "sendButtonLocation"
     static let unreadHandler = "unreadCount"
+    static let phoneStatusHandler = "phoneStatus"
 
     /// Forwards console output to the native Console Output window.
     static let consoleRedirect = #"""
@@ -225,6 +226,76 @@ enum WebScripts {
             }
         }
         setInterval(check, 500);
+    })();
+    """#
+
+    /// Reports the paired phone going unreachable and coming back. The signals come from
+    /// Google's own banner component (see docs/FINDINGS.md): the "Trying to reach your phone"
+    /// banner carries `data-e2e-phone-no-connection-banner`, and the full-page variant is
+    /// `mw-unable-to-connect-container`. Google keeps only the active banner in the DOM and
+    /// shows the browser-offline banner in place of the phone one, so a missing banner only
+    /// counts as "online" while the conversation list is up and the Mac itself is online.
+    /// Offline must hold for 25 s before it is reported, and "back online" is reported only
+    /// after an offline report, once the phone has stayed reachable for 10 s. The reported
+    /// state lives in sessionStorage so a page reload neither repeats nor loses it.
+    static let phoneStatus = #"""
+    (function() {
+        if (window.__sideTextPhoneStatusInstalled) { return; }
+        window.__sideTextPhoneStatusInstalled = true;
+
+        const OFFLINE_AFTER_MS = 25000;
+        const ONLINE_AFTER_MS = 10000;
+        const COALESCE_MS = 250;
+        const POSTED_KEY = 'sidetext-phone-offline-posted';
+        const UNREACHABLE = '[data-e2e-phone-no-connection-banner], mw-unable-to-connect-container';
+        const CONVERSATIONS = 'mws-conversations-list, mws-conversation-list-item, [data-e2e-conversation-list]';
+
+        function readPosted() {
+            try { return sessionStorage.getItem(POSTED_KEY) === '1'; } catch (e) { return false; }
+        }
+        function writePosted(value) {
+            try {
+                if (value) { sessionStorage.setItem(POSTED_KEY, '1'); } else { sessionStorage.removeItem(POSTED_KEY); }
+            } catch (e) {}
+        }
+
+        let offlinePosted = readPosted();
+        let observed = null;
+        let since = 0;
+        let thresholdTimer = null;
+        let coalesceTimer = null;
+
+        function read() {
+            if (navigator.onLine === false) { return 'unknown'; }
+            if (document.querySelector(UNREACHABLE)) { return 'offline'; }
+            if (document.querySelector(CONVERSATIONS)) { return 'online'; }
+            return 'unknown';
+        }
+
+        function evaluate() {
+            const now = Date.now();
+            const state = read();
+            if (state !== observed) { observed = state; since = now; }
+            if (thresholdTimer !== null) { clearTimeout(thresholdTimer); thresholdTimer = null; }
+            const hold = state === 'offline' && !offlinePosted ? OFFLINE_AFTER_MS
+                       : state === 'online' && offlinePosted ? ONLINE_AFTER_MS : null;
+            if (hold === null) { return; }
+            const remaining = since + hold - now;
+            if (remaining > 0) { thresholdTimer = setTimeout(evaluate, remaining); return; }
+            offlinePosted = state === 'offline';
+            writePosted(offlinePosted);
+            try { window.webkit.messageHandlers.phoneStatus.postMessage({ online: !offlinePosted }); } catch (e) {}
+        }
+
+        function schedule() {
+            if (coalesceTimer !== null) { return; }
+            coalesceTimer = setTimeout(function() { coalesceTimer = null; evaluate(); }, COALESCE_MS);
+        }
+
+        new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
+        window.addEventListener('online', schedule);
+        window.addEventListener('offline', schedule);
+        evaluate();
     })();
     """#
 
